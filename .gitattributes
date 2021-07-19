@@ -1,7 +1,2 @@
-# Jupyter notebook
-
-# For text count
-# *.ipynb  text
-
-# To ignore it use below
+*.py linguist-language=python
 *.ipynb linguist-documentation
