@@ -25,7 +25,6 @@ SAFETY_DISTANCE = 5
 ROUTE_GRAPH_NUM_SAMPLES = 3000
 ROUTE_GRAPH_K = 30
 
-# Finite-State Machine states
 class States(Enum):
     MANUAL = auto()
     ARMING = auto()
@@ -35,7 +34,7 @@ class States(Enum):
     DISARMING = auto()
     PLANNING = auto()
 
-# Global location representation
+
 class GlobalLocation():
     def __init__(self, lon=0.0, lat=0.0, alt=0.0):
         self._lon = float(lon)
@@ -66,7 +65,7 @@ class GlobalLocation():
         self._lat = lat
         self._alt = alt
 
-# Class responsible for motion planning
+        
 class MotionPlanning(Drone):
 
     def __init__(self, connection=None, threaded=False, target_altitude=TARGET_ALTITUDE, 
@@ -82,7 +81,6 @@ class MotionPlanning(Drone):
         self._target_altitude = target_altitude
         self._use_grid = use_grid
         self._prune_path = prune_path
-        self._path_found = False
         
         # for MavLink (or any other) connection
         self._connection = connection
@@ -120,12 +118,6 @@ class MotionPlanning(Drone):
         self._longitude_min, self._latitude_min, _ = min_lla
         self._longitude_max, self._latitude_max, _ = max_lla
 
-        print("Latitude")
-        print("Min:", self._latitude_min)
-        print("Max:", self._latitude_max)
-        print("\nLongitude")
-        print("Min:", self._longitude_min)
-        print("Max:", self._longitude_max)
         
         if not self._use_grid:
             self._route_planner = RoutePlanner(target_altitude = self._target_altitude,
@@ -233,6 +225,7 @@ class MotionPlanning(Drone):
             if -1.0 * self.local_position[2] > 0.95 * self.target_position[2]:
                 self.waypoint_transition()
         elif self.flight_state == States.WAYPOINT:
+            target_alt = self.target_position[3]
             # check whether we are close to target position (N-E-Alt)
             # local_position[2] (depth) is negative altitude, keep altitude proximity to 0.5 meters
             if (np.linalg.norm(self.target_position[0:2] - self.local_position[0:2]) < 1.0 and 
@@ -269,13 +262,10 @@ class MotionPlanning(Drone):
         self.take_control()
 
     def takeoff_transition(self):
-        if self._path_found is True:
-            self.flight_state = States.TAKEOFF
-            print("takeoff transition")
-            print("takeoff position: ", self.target_position)
-            self.takeoff(self.target_position[2])
-        else:
-            self.disarming_transition()
+        self.flight_state = States.TAKEOFF
+        print("takeoff transition")
+        print("takeoff position: ", self.target_position)
+        self.takeoff(self.target_position[2])
 
     def waypoint_transition(self):
         self.flight_state = States.WAYPOINT
@@ -310,35 +300,40 @@ class MotionPlanning(Drone):
 
     def plan_path(self):
         self.flight_state = States.PLANNING
-        self._path_found = False
+        TAKEOFF_ALTITUDE = self._target_altitude  # 2 # 5
+#         SAFETY_DISTANCE = 5
 
-        self.target_position[2] = self._target_altitude
+        self.target_position[2] = TAKEOFF_ALTITUDE
 
-        # set home position to (lon0, lat0, 0). lat0, lon0 are read in __init__
+        # TODO: read lat0, lon0 from colliders into floating point values
+        # Done in __init__
+
+        # TODO: set home position to (lon0, lat0, 0)
         self.set_home_position(self.global_home_loc.lon, 
                                self.global_home_loc.lat, 
                                self.global_home_loc.alt)
         time.sleep(1)
 
-        # retrieve current global position
+        # TODO: retrieve current global position
         global_position = self.global_position
  
-        # convert to current local position using global_to_local()
+        # TODO: convert to current local position using global_to_local()
         local_position = global_to_local(global_position, self.global_home)
         
-#         print('self.global_home {0}, self.global_position {1}, self.local_position {2}, calculated local_position {3}'.format(self.global_home, self.global_position, self.local_position, local_position))
+        print('self.global_home {0}, self.global_position {1}, self.local_position {2}, calculated local_position {3}'.format(self.global_home, self.global_position,
+                                                                         self.local_position, local_position))
 
         if self._use_grid:
             # Read in obstacle map
 #             data = np.loadtxt('colliders.csv', delimiter=',', dtype='Float64', skiprows=2)
 
             # Define a grid for a particular altitude and safety margin around obstacles
-            grid, north_offset, east_offset = create_grid(self._data, self._target_altitude, SAFETY_DISTANCE)
+            grid, north_offset, east_offset = create_grid(self._data, TAKEOFF_ALTITUDE, SAFETY_DISTANCE)
             print("North offset = {0}, east offset = {1}".format(north_offset, east_offset))
 
             # Define starting point on the grid (this is just grid center)
     #         grid_start = (-north_offset, -east_offset)
-            # convert start position to current position rather than map center
+            # TODO: convert start position to current position rather than map center
             start_n = int(local_position[0]-north_offset)
             start_e = int(local_position[1]-east_offset)
 
@@ -351,16 +346,21 @@ class MotionPlanning(Drone):
             goal_n = int(local_goal[0]-north_offset)
             goal_e = int(local_goal[1]-east_offset)
             grid_goal = (goal_n, goal_e)
-            
+            # TODO: adapt to set goal as latitude / longitude position and convert
+
             # Run A* to find a path from start to goal
+            # TODO: add diagonal motions with a cost of sqrt(2) to your A* implementation
+            # or move to a different search space such as a graph (not done here)
             print('Local Start and Goal: ', grid_start, grid_goal)
             print("Searching for a path ...")
             path, _ = a_star(grid, heuristic, grid_start, grid_goal)
 
             # TODO: prune path to minimize number of waypoints
+            # TODO (if you're feeling ambitious): Try a different approach altogether!
 
             # Convert path to waypoints
-            waypoints = [[p[0] + north_offset, p[1] + east_offset, self._target_altitude, 0] for p in path]
+            waypoints = [[p[0] + north_offset, p[1] + east_offset, TAKEOFF_ALTITUDE, 0] for p in path]
+#             print("Waypoints: {0}".format(waypoints))
         else: 
             #
             # build a graph of free space
@@ -374,27 +374,43 @@ class MotionPlanning(Drone):
             local_start = global_to_local(self.global_start_loc.location, self.global_home)
             local_goal = global_to_local(self.global_goal_loc.location, self.global_home)
 
-            print("global start:", self.global_start_loc.location, "\nglobal goal:", self.global_goal_loc.location, 
-                  "\nlocal_start: ", local_start, "\nlocal_goal: ", local_goal)
+            print("global start:", self.global_start_loc.location, 
+                  " global goal:", self.global_goal_loc.location, " local_start: ", local_start, 
+                  " local_goal: ", local_goal)
 
-            print("\nSearching for a path...")
+            print("Searching for a path ...")
             waypoints = self._route_planner.get_flight_waypoints(local_start, local_goal, 
                                                                  prune_path=self._prune_path)
 
-            print("\nFinal Pruned Waypoints ({0}): {1}".format(len(waypoints), waypoints))
+            print("Final Waypoints: {0}".format(waypoints))
 
+
+        print("Num waypoints: ", len(waypoints))
+        
         if len(waypoints):
-
-            # set flag
-            self._path_found = True
             # Set self.waypoints
             self.waypoints = waypoints
             
-            # send waypoints to sim
+            # TODO: send waypoints to sim
             self.send_waypoints()
         else:
-            self._path_found = False
             print("No Path found!")
+
+#     def get_ned_waypoint(self, global_loc):
+#         return [int(i) for i in global_to_local(global_loc, self.global_home)]
+
+#     def start(self):
+#         self.start_log("Logs", "NavLog.txt")
+
+#         print("starting connection")
+#         self.connection.start()
+
+#         # Only required if they do threaded
+#         # while self.in_mission:
+#         #    pass
+
+#         self.stop_log()
+
 
 
 if __name__ == "__main__":
@@ -403,7 +419,7 @@ if __name__ == "__main__":
     parser.add_argument('--host', type=str, default='127.0.0.1', help="host address, i.e. '127.0.0.1'")
     parser.add_argument('-l', type=float, nargs=2, default=[37.792779, -122.397475], help="Goal Location: lat lon")
 #     parser.add_argument('-a', type=int, nargs=1, default=TARGET_ALTITUDE, help="Target Altitude (integer): alt (meters)")
-    parser.add_argument('-pg', action='store_true', help="Plots the route graph showing obstacles higher than or equal to target altitude. (Takes a little while to plot)")
+    parser.add_argument('-pg', action='store_true', help="Plots the route graph showing obstacles higher than or equal to target height.")
     args = parser.parse_args()
 
     alt = TARGET_ALTITUDE
@@ -427,3 +443,16 @@ if __name__ == "__main__":
         print("Target Altitude: {0} meters".format(alt))
 
         drone.fly_to(lat, lon)
+    
+    
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument('--port', type=int, default=5760, help='Port number')
+#     parser.add_argument('--host', type=str, default='127.0.0.1', help="host address, i.e. '127.0.0.1'")
+#     args = parser.parse_args()
+
+#     conn = MavlinkConnection('tcp:{0}:{1}'.format(args.host, args.port), timeout=60)
+#     drone = MotionPlanning(conn)
+#     time.sleep(1)
+
+#     drone.start()
