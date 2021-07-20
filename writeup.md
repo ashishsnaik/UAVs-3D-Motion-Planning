@@ -94,7 +94,7 @@ The user can input the goal location (global latitude and longitude location wit
 
 *<b>Note:</b> Currently, the Goal (as well as the Start) location altitude is restricted to Zero (ground level).*
 
-#### **A* Graph Search Algorithm**
+#### <b>A\* Graph Search Algorithm</b>
 
 The actual 3D-Motion Planning algorithm is implemented by *class RoutePlanner* in `route_planner.py`. The *RoutePlanner* works with the local ECEF (earth-centered, earth-fixed) coordinate system [North, East, Altitude, Heading].
 
